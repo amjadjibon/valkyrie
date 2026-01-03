@@ -211,7 +211,7 @@ Valkyrie supports multiple flag syntax styles:
 
 # Built-in flags
 --help, -h        # Show help
---version, -v     # Show version
+--version, -V     # Show version
 ```
 
 ## API Reference

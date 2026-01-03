@@ -47,7 +47,7 @@ Flag_Value :: union {
 Context :: struct {
 	args:      []string,
 	flags:     map[string]Flag_Value,
-	parent:    ^Command,
+	command:   ^Command,
 	allocator: mem.Allocator,
 }
 
@@ -228,14 +228,20 @@ parse_args :: proc(
 ) {
 	ctx.flags = make(map[string]Flag_Value, allocator = allocator)
 	ctx.allocator = allocator
-	ctx.parent = cmd
+	ctx.command = cmd
 	cmd_to_run = cmd
 	ok = false
+
+	// Track which flags were explicitly provided (for required flag validation)
+	provided_flags := make(map[string]bool, allocator = allocator)
+	defer delete(provided_flags)
 
 	// Ensure cleanup on error paths
 	defer if !ok {
 		delete(ctx.flags)
-		delete(ctx.args)
+		if ctx.args != nil {
+			delete(ctx.args)
+		}
 	}
 
 	i := 0
@@ -290,6 +296,7 @@ parse_args :: proc(
 
 					switch flag.type {
 					case .Bool:
+						provided_flags[flag.name] = true
 						if has_equals {
 							// Handle --flag=true or --flag=false
 							if flag_value == "true" || flag_value == "1" {
@@ -304,6 +311,7 @@ parse_args :: proc(
 							ctx.flags[flag.name] = true
 						}
 					case .String, .Int, .Float:
+						provided_flags[flag.name] = true
 						value := flag_value
 						if !has_equals {
 							i += 1
@@ -349,10 +357,14 @@ parse_args :: proc(
 			flag_value := ""
 			has_equals := false
 
-			// Check for -f=value syntax
+			// Check for -f=value or -fvalue syntax
 			if len(arg) > 2 {
 				if arg[2] == '=' {
 					flag_value = arg[3:]
+					has_equals = true
+				} else {
+					// Handle -fvalue syntax (value immediately after flag character)
+					flag_value = arg[2:]
 					has_equals = true
 				}
 			}
@@ -364,6 +376,7 @@ parse_args :: proc(
 
 					switch flag.type {
 					case .Bool:
+						provided_flags[flag.name] = true
 						if has_equals {
 							// Handle -f=true or -f=false
 							if flag_value == "true" || flag_value == "1" {
@@ -378,6 +391,7 @@ parse_args :: proc(
 							ctx.flags[flag.name] = true
 						}
 					case .String, .Int, .Float:
+						provided_flags[flag.name] = true
 						value := flag_value
 						if !has_equals {
 							i += 1
@@ -425,7 +439,7 @@ parse_args :: proc(
 					subcommand_found = true
 					remaining_args := args[i + 1:]
 					delete(ctx.flags)
-					delete(ctx.args)
+					// Note: ctx.args is not assigned yet, so no need to delete
 					return parse_args(subcmd, remaining_args, allocator)
 				}
 			}
@@ -441,10 +455,10 @@ parse_args :: proc(
 	// Convert positional args to slice
 	ctx.args = slice.clone(positional_args[:], allocator)
 
-	// Check required flags
+	// Check required flags were explicitly provided
 	for flag in cmd.flags {
 		if flag.required {
-			if flag.name not_in ctx.flags {
+			if flag.name not_in provided_flags {
 				fmt.eprintfln("Error: required flag --%s not provided", flag.name)
 				return ctx, cmd_to_run, false
 			}
@@ -497,9 +511,9 @@ app_run :: proc(app: ^App, args: []string = nil) -> int {
 		run_args = os.args[1:]
 	}
 
-	// Check for version flag
+	// Check for version flag (use -V to avoid conflict with user -v flags)
 	for arg in run_args {
-		if arg == "--version" || arg == "-v" {
+		if arg == "--version" || arg == "-V" {
 			fmt.printfln("%s version %s", app.name, app.version)
 			return 0
 		}
