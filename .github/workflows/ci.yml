@@ -18,6 +18,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Create build directory
+        run: mkdir -p build
+      
       - name: Run Tests
         run: odin test valkyrie -out:build/test
       
