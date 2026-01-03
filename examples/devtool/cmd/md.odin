@@ -88,6 +88,8 @@ md_toc_handler :: proc(ctx: ^vk.Context) -> bool {
 	return true
 }
 
+// Make URL-friendly slug from text
+// Note: Caller must delete the returned string
 make_slug :: proc(text: string) -> string {
 	result := strings.builder_make()
 	for c in text {
